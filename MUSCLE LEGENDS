@@ -1,0 +1,120 @@
+
+-- Muscle Legends Stats Notifier
+-- Delta Android | Solo lectura
+-- Configura tu webhook privado antes de ejecutar.
+
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+
+local player = Players.LocalPlayer
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1559408968432881768/T-HwO5_ukrCTeV2PUia0DslY2PCo9PcbNn_voG1kR4G8njSttp_MugTipDRi_rW8EVt_"
+
+local STATS_INTERVAL = 60
+local BOSS_INTERVAL = 5
+
+-- Compatibilidad con distintos nombres de funciones HTTP.
+local function sendRequest(url, body)
+    local requestFunc =
+        (syn and syn.request)
+        or (http and http.request)
+        or http_request
+        or request
+
+    assert(type(requestFunc) == "function",
+        "Delta no expone una funcion HTTP compatible")
+
+    return requestFunc({
+        Url = url,
+        Method = "POST",
+        Headers = {
+            ["Content-Type"] = "application/json"
+        },
+        Body = HttpService:JSONEncode(body)
+    })
+end
+
+local function notify(message)
+    if WEBHOOK_URL == "PEGA_AQUI_TU_WEBHOOK_NUEVO" then
+        warn("Configura tu webhook privado.")
+        return
+    end
+
+    local ok, result = pcall(function()
+        return sendRequest(WEBHOOK_URL, {
+            username = "Muscle Legends Stats",
+            content = message
+        })
+    end)
+
+    if not ok then
+        warn("Error enviando notificacion:", result)
+    end
+end
+
+local function readStat(name)
+    local folder = player:FindFirstChild("leaderstats")
+    local stat = folder and folder:FindFirstChild(name)
+
+    if stat and stat:IsA("ValueBase") then
+        return tostring(stat.Value)
+    end
+
+    return "No disponible"
+end
+
+local function sendStats()
+    local message = table.concat({
+        "📊 **Muscle Legends — Estadísticas**",
+        "👤 Jugador: " .. player.Name,
+        "💪 Fuerza: " .. readStat("Strength"),
+        "♻️ Renacimientos: " .. readStat("Rebirths"),
+        "⚔️ Eliminaciones: " .. readStat("Kills"),
+        "🥊 Peleas: " .. readStat("Brawls"),
+        "🪙 Monedas: No identificadas",
+        "⭐ Nivel: No identificado",
+        "🕒 Actualización: <t:"
+            .. tostring(os.time()) .. ":T>"
+    }, "\n")
+
+    notify(message)
+end
+
+-- Evita repetir avisos por el mismo modelo mientras siga presente.
+local knownBosses = {}
+
+local function checkBosses()
+    local currentBosses = {}
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model")
+            and string.find(string.lower(obj.Name), "boss") then
+
+            currentBosses[obj:GetFullName()] = true
+
+            if not knownBosses[obj:GetFullName()] then
+                notify("👹 **Posible jefe detectado**\n"
+                    .. obj.Name)
+            end
+        end
+    end
+
+    knownBosses = currentBosses
+end
+
+notify("🟢 Notificador iniciado para " .. player.Name)
+
+task.spawn(function()
+    while task.wait(STATS_INTERVAL) do
+        local ok, err = pcall(sendStats)
+        if not ok then
+            warn("Error leyendo estadísticas:", err)
+        end
+    end
+end)
+
+while task.wait(BOSS_INTERVAL) do
+    local ok, err = pcall(checkBosses)
+    if not ok then
+        warn("Error buscando jefes:", err)
+    end
+end
