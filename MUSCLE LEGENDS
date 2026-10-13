@@ -9,7 +9,7 @@ local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
 
 -- Introduce aquí tu webhook nuevo y privado
-local WEBHOOK_URL = "PEGA_AQUI_TU_WEBHOOK"
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1559408968432881768/T-HwO5_ukrCTeV2PUia0DslY2PCo9PcbNn_voG1kR4G8njSttp_MugTipDRi_rW8EVt_"
 
 local STATS_INTERVAL = 60
 local tiempoInicio = os.time()
