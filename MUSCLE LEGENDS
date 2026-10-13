@@ -1,18 +1,26 @@
 
 -- Muscle Legends Stats Notifier
 -- Delta Android | Solo lectura
--- Configura tu webhook privado antes de ejecutar.
+-- Estadísticas a Discord cada 60 segundos
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 
 local player = Players.LocalPlayer
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1559408968432881768/T-HwO5_ukrCTeV2PUia0DslY2PCo9PcbNn_voG1kR4G8njSttp_MugTipDRi_rW8EVt_"
+
+-- Introduce aquí tu webhook nuevo y privado
+local WEBHOOK_URL = "PEGA_AQUI_TU_WEBHOOK"
 
 local STATS_INTERVAL = 60
-local BOSS_INTERVAL = 5
+local tiempoInicio = os.time()
 
--- Compatibilidad con distintos nombres de funciones HTTP.
+-- Valores iniciales de la sesión
+local fuerzaInicial = nil
+local renacimientosIniciales = nil
+
+-- Última fuerza registrada para calcular la ganancia por minuto
+local fuerzaAnterior = nil
+
 local function sendRequest(url, body)
     local requestFunc =
         (syn and syn.request)
@@ -21,7 +29,7 @@ local function sendRequest(url, body)
         or request
 
     assert(type(requestFunc) == "function",
-        "Delta no expone una funcion HTTP compatible")
+        "No se encontró una función HTTP compatible")
 
     return requestFunc({
         Url = url,
@@ -34,8 +42,8 @@ local function sendRequest(url, body)
 end
 
 local function notify(message)
-    if WEBHOOK_URL == "PEGA_AQUI_TU_WEBHOOK_NUEVO" then
-        warn("Configura tu webhook privado.")
+    if WEBHOOK_URL == "PEGA_AQUI_TU_WEBHOOK" then
+        warn("Configura tu webhook privado")
         return
     end
 
@@ -47,74 +55,116 @@ local function notify(message)
     end)
 
     if not ok then
-        warn("Error enviando notificacion:", result)
+        warn("Error enviando a Discord:", result)
     end
 end
 
 local function readStat(name)
-    local folder = player:FindFirstChild("leaderstats")
-    local stat = folder and folder:FindFirstChild(name)
+    local stats = player:FindFirstChild("leaderstats")
+    local stat = stats and stats:FindFirstChild(name)
 
     if stat and stat:IsA("ValueBase") then
-        return tostring(stat.Value)
+        return tonumber(stat.Value)
     end
 
-    return "No disponible"
+    return nil
+end
+
+local function formatNumber(number)
+    local formatted = tostring(math.floor(number))
+    local result
+
+    repeat
+        formatted, result = formatted:gsub(
+            "^(-?%d+)(%d%d%d)", "%1,%2"
+        )
+    until result == 0
+
+    return formatted
+end
+
+local function formatTime(seconds)
+    seconds = math.max(0, math.floor(seconds))
+
+    local hours = math.floor(seconds / 3600)
+    local minutes = math.floor((seconds % 3600) / 60)
+    local secs = seconds % 60
+
+    return string.format("%02dh %02dm %02ds",
+        hours, minutes, secs)
 end
 
 local function sendStats()
+    local fuerzaActual = readStat("Strength")
+    local renacimientosActuales = readStat("Rebirths")
+
+    if not fuerzaActual or not renacimientosActuales then
+        warn("No se pudieron leer Strength o Rebirths")
+        return
+    end
+
+    -- Guardar valores iniciales
+    if fuerzaInicial == nil then
+        fuerzaInicial = fuerzaActual
+    end
+
+    if renacimientosIniciales == nil then
+        renacimientosIniciales = renacimientosActuales
+    end
+
+    -- Ganancias acumuladas desde el inicio
+    local fuerzaGanada = fuerzaActual - fuerzaInicial
+
+    local renacimientosGanados =
+        renacimientosActuales - renacimientosIniciales
+
+    -- Ganancia desde la última lectura
+    local fuerzaPorMinuto = 0
+
+    if fuerzaAnterior ~= nil then
+        fuerzaPorMinuto = fuerzaActual - fuerzaAnterior
+    end
+
+    fuerzaAnterior = fuerzaActual
+
+    -- Tiempo total de la sesión
+    local tiempoSesion = os.time() - tiempoInicio
+
     local message = table.concat({
-        "📊 **Muscle Legends — Estadísticas**",
+        "📊 **MUSCLE LEGENDS — REPORTE**",
         "👤 Jugador: " .. player.Name,
-        "💪 Fuerza: " .. readStat("Strength"),
-        "♻️ Renacimientos: " .. readStat("Rebirths"),
-        "⚔️ Eliminaciones: " .. readStat("Kills"),
-        "🥊 Peleas: " .. readStat("Brawls"),
-        "🪙 Monedas: No identificadas",
-        "⭐ Nivel: No identificado",
-        "🕒 Actualización: <t:"
-            .. tostring(os.time()) .. ":T>"
+        "",
+        "💪 **FUERZA**",
+        "Actual: " .. formatNumber(fuerzaActual),
+        "Ganada en sesión: +" .. formatNumber(fuerzaGanada),
+        "Ganada en el último minuto: "
+            .. (fuerzaPorMinuto >= 0 and "+" or "")
+            .. formatNumber(fuerzaPorMinuto),
+        "",
+        "♻️ **RENACIMIENTOS**",
+        "Actuales: " .. formatNumber(renacimientosActuales),
+        "Ganados en sesión: "
+            .. formatNumber(renacimientosGanados),
+        "",
+        "⏱️ Tiempo de sesión: " .. formatTime(tiempoSesion),
+        "🕒 Actualización: <t:" .. os.time() .. ":T>"
     }, "\n")
 
     notify(message)
 end
 
--- Evita repetir avisos por el mismo modelo mientras siga presente.
-local knownBosses = {}
+-- Aviso inicial
+notify("🟢 **Notificador iniciado**\n"
+    .. "👤 Jugador: " .. player.Name
+    .. "\n📊 Reportes cada 60 segundos")
 
-local function checkBosses()
-    local currentBosses = {}
+-- Enviar primer reporte inmediatamente y continuar cada minuto
+while true do
+    local ok, err = pcall(sendStats)
 
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Model")
-            and string.find(string.lower(obj.Name), "boss") then
-
-            currentBosses[obj:GetFullName()] = true
-
-            if not knownBosses[obj:GetFullName()] then
-                notify("👹 **Posible jefe detectado**\n"
-                    .. obj.Name)
-            end
-        end
-    end
-
-    knownBosses = currentBosses
-end
-
-notify("🟢 Notificador iniciado para " .. player.Name)
-
-task.spawn(function()
-    while task.wait(STATS_INTERVAL) do
-        local ok, err = pcall(sendStats)
-        if not ok then
-            warn("Error leyendo estadísticas:", err)
-        end
-    end
-end)
-
-while task.wait(BOSS_INTERVAL) do
-    local ok, err = pcall(checkBosses)
     if not ok then
-        warn("Error buscando jefes:", err)
+        warn("Error generando estadísticas:", err)
     end
+
+    task.wait(STATS_INTERVAL)
 end
